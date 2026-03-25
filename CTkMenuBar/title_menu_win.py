@@ -71,6 +71,7 @@ class CTkTitleMenu(customtkinter.CTkToplevel):
         
         self.after(10)
         self.master = master
+        self._master_bind_ids = {}
         master_type = self.master.winfo_name()
         
         if master_type=="tk":
@@ -118,17 +119,64 @@ class CTkTitleMenu(customtkinter.CTkToplevel):
             
         self.padding = padx
 
-        self.master.bind("<Configure>", lambda _: self.change_dimension())
-        self.master.bind("<Destroy>", lambda _: self.destroy_window() if not self.master.winfo_viewable() else None)
+        self._master_bind_ids["<Configure>"] = self.master.bind("<Configure>", self._on_master_configure, add="+")
+        self._master_bind_ids["<Destroy>"] = self.master.bind("<Destroy>", self._on_master_destroy, add="+")
         self.num = 0
-        
-        self.master.bind("<Map>", lambda e: self.withdraw)
+        self._master_bind_ids["<Map>"] = self.master.bind("<Map>", self._on_master_map, add="+")
+        self._master_bind_ids["<Unmap>"] = self.master.bind("<Unmap>", self._on_master_unmap, add="+")
+
+    def _on_master_configure(self, _event=None):
+        if _event is not None and _event.widget is not self.master:
+            return
+        self.change_dimension()
+
+    def _on_master_destroy(self, _event=None):
+        if _event is not None and _event.widget is not self.master:
+            return
+        try:
+            if not self.master.winfo_viewable():
+                self.destroy_window()
+        except tk.TclError:
+            self.destroy_window()
+
+    def _on_master_map(self, _event=None):
+        if _event is not None and _event.widget is not self.master:
+            return
+        try:
+            self.deiconify()
+            self.change_dimension()
+        except tk.TclError:
+            pass
+
+    def _on_master_unmap(self, _event=None):
+        if _event is not None and _event.widget is not self.master:
+            return
+        try:
+            self.withdraw()
+        except tk.TclError:
+            pass
+
+    def _unbind_master_events(self):
+        for sequence, bind_id in self._master_bind_ids.items():
+            try:
+                self.master.unbind(sequence, bind_id)
+            except (tk.TclError, AttributeError):
+                pass
+        self._master_bind_ids.clear()
 
     def destroy_window(self):
         """
         Destroy the title menu window.
         """
+        self._unbind_master_events()
+        if not self.winfo_exists():
+            return
         super().destroy()
+
+    def destroy(self):
+        self._unbind_master_events()
+        if self.winfo_exists():
+            super().destroy()
 
     def _set_appearance_mode(self, mode_string):
         """
@@ -205,6 +253,12 @@ class CTkTitleMenu(customtkinter.CTkToplevel):
         - Minimized ("iconic"): Hides the menu
         - Too small: Hides the menu if width becomes negative
         """
+        try:
+            if not self.winfo_exists() or not self.master.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
         width = self.master.winfo_width()-130-self.x_offset
         if width<0:
             self.withdraw()
@@ -218,8 +272,11 @@ class CTkTitleMenu(customtkinter.CTkToplevel):
         if self.master.state()=="zoomed":
             y += 4
             x -= 7
-        self.geometry(f"{width}x{height}+{x}+{y}")
-        self.deiconify()
+        try:
+            self.geometry(f"{width}x{height}+{x}+{y}")
+            self.deiconify()
+        except tk.TclError:
+            return
  
     def change_header_color(self, caption_color):
         """
